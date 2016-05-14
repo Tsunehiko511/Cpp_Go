@@ -276,6 +276,30 @@ public:
 		return SUCCESS;
 	}
 
+	void playout(Board *board, double *score){
+		Player player1 = Player(un_color, RANDOM);
+		Player player2 = Player(color, RANDOM);
+		Player player = player1;
+		int passed = 0;
+
+		while(passed<2){
+			int result = player.play(board);
+			if(result == SUCCESS){
+				passed = 0;
+			}
+			else{
+				passed += 1;
+			}
+			if(player.color==player1.color){
+				player = player2;
+			}
+			else{
+				player = player1;
+			}
+		}
+		scoring(board, score);
+	}
+
 	int random_choice(Board *board){
 //		printf("random_choice\n");
 		vector<point> spaces = board->getSpaces();
@@ -284,8 +308,6 @@ public:
 			int n = rand()%l;
 			point position = spaces[n];
 			int result = move(board, position);
-			//printf("random_choice_select\n");
-			// board->draw();
 			if(result == SUCCESS){
 				posi = position;
 				return SUCCESS;
@@ -296,16 +318,61 @@ public:
 		}
 		return PASS;
 	}
+
+	int monte_carlo(Board *board){
+		clock_t start = clock();
+
+		const int TRY_GAMES = 30;
+		int try_total = 0;
+		int best_winner = -1;
+		point best_position = {0,0};
+
+		// すべての手対して１手打つ（盤面は崩れるのでコピー）
+		Board thinking_board;
+		Board thinking_board_next;
+		vector<point> spaces = board->getSpaces();
+		int l = spaces.size();
+		for(int i=0; i<l; i++){
+			point position = spaces[i];
+			board->copy(&thinking_board);
+			int result = this->move(&thinking_board, position);
+			if(result != SUCCESS){
+				continue;
+			}
+			int win_count = 0;
+			for (int n=0; n<TRY_GAMES; n++){
+				thinking_board.copy(&thinking_board_next);
+				double score[2] = {0.0,0.0};
+				playout(&thinking_board_next, score);
+				if((score[0] > score[1] && this->color == BLACK)||(score[0] < score[1] && this->color == WHITE)){
+					win_count += 1;
+				}
+			}
+			try_total += TRY_GAMES;
+
+			if(win_count > best_winner){
+				best_winner = win_count;
+				best_position = position;
+			}
+		}
+		printf("playout：%d回\n", try_total);
+		clock_t end = clock();
+		double elap = (double)(end-start)/CLOCKS_PER_SEC;
+		std::cout << "処理時間：" << elap << " sec. " << std::endl;
+		std::cout << (double)try_total/elap << " playout/sec. " << std::endl;		
+		if(best_position.y==0 && best_position.x==0){
+			return PASS;
+		}
+		return this->move(board, best_position);
+	}
+
 	int tactics(Board *board){
-		return random_choice(board);
-	/*
 		if(this->tact==MONTE_CARLO){
-			//return monte_carlo(board);
+			return monte_carlo(board);
 		}
 		else{
 			return random_choice(board);
 		}
-	*/
 	}
 };
 
@@ -336,7 +403,6 @@ void count_around(int checked[11][11], Board *board, point position, int color, 
 void count_joined_liberty(Board *board, point position, int color, int* joined, int* liberty){
 	int checked[11][11] = {{FALSE}};
 	count_around(checked, board, position, color, joined, liberty);
-	// printf("count_joined_liberty END\n");
 }
 // 二次元配列を受け取り変更して返す
 int(* double_array(int array[][9]))[9]{
@@ -349,23 +415,21 @@ int(* double_array(int array[][9]))[9]{
 }
 
 
-double run(void){
-	clock_t start = clock();
+int main(void){
+	srand((unsigned) time(NULL));
 	// 碁盤の作成
 	Board board;
 	// プレイヤー
-	Player black = Player(BLACK, RANDOM);
+	Player black = Player(BLACK, MONTE_CARLO);
 	Player white = Player(WHITE, RANDOM);
 	Player player = black;
-	//board.set((point){2,5},BLACK);
 	// 先手
-	int length = 0;
 	int passed = 0;
 	// 対局開始
 	while(passed < 2){
 		int result = player.play(&board);
 		if(result==SUCCESS){
-			//board.draw();
+			board.draw();
 			// usleep(100000); // 1000000=1sec
 		}
 		// パス判定
@@ -388,23 +452,5 @@ double run(void){
 	judge(score);
 	clock_t end = clock();
 	board.draw();
-
-	double elap = (double)(end-start)/CLOCKS_PER_SEC;
-	return elap;
-}
-
-int main(){
-	double sum = 0.0;
-	size_t loop_count = 1000;
-	srand((unsigned) time(NULL));
-
-	for(size_t i=0; i<loop_count; i++){
-		sum += run();
-	}
-	std::cout << "total time " << sum << " sec. " << std::endl;
-	sum /= static_cast<double>(loop_count);
-	std::cout << "average time " << sum << " sec. " << std::endl;
-	std::cout << "average playout " << std::setprecision(8) << (double)CLOCKS_PER_SEC / (sum * CLOCKS_PER_SEC) << std::endl;
-
 	return 0;
 }
