@@ -11,7 +11,7 @@
 using namespace std;
 #define BOARD_SIZE 9
 #define W_SIZE 11
-#define KOMI = 6.5
+#define KOMI  6.5
 // 石を打ったときの処理
 #define SUCCESS  0 		// 打てる
 #define KILL 	 1 		// 自殺手
@@ -117,6 +117,54 @@ public:
 
 void count_around(int checked[9][9], Board *board, point position, int color, int* joined, int* liberty);
 void count_joined_liberty(Board *board, point position, int color, int* joined, int* liberty);
+
+void getPoints(Board *board, double *count){
+	int black_points = 0;
+	int white_points = 0;
+	for(int y=1; y<W_SIZE-1; y++){
+		for(int x=1; x<W_SIZE-1; x++){
+			int data = board->get((point){y,x});
+			if(data == BLACK){
+				black_points += 1;
+			}
+			else if(data == WHITE){
+				white_points += 1;
+			}
+			else{
+				int around[4] = {0,0,0,0}; // ４方向のSPACE,BLACK,WHITE,WALLの数
+				point neighbors[4];
+				getNeighbors((point){y,x}, neighbors);
+				for(int i=0; i<4 ;i++){
+					around[board->get(neighbors[i])] += 1;
+				}
+				// 黒だけに囲まれていれば黒地
+				if(around[BLACK] > 0 && around[WHITE] == 0){
+					black_points += 1;
+				}
+				// 白だけに囲まれていれば白地
+				if(around[WHITE] > 0 && around[BLACK] == 0){
+					white_points += 1;
+				}
+			}
+		}
+	}
+	count[0] = (double)black_points; // 黒石＋黒地
+	count[1] = (double)white_points; // 白石＋白地
+}
+
+void scoring(Board *board, double *score){
+	getPoints(board, score);
+	score[0] -= KOMI;
+}
+void judge(double *score){
+	printf("%s：%3.1f ",visual[BLACK],score[0]);
+	printf("%s：%3.0f\n",visual[WHITE],score[1]);
+	if(score[0]>score[1]){
+		printf("黒の勝ち\n");
+	}else{
+		printf("白の勝ち\n");		
+	}
+}
 
 
 class Player{
@@ -335,8 +383,11 @@ double run(void){
 			player = black;
 		}
 	}
-	//board.draw();
+	double score[2] = {0,0};
+	scoring(&board, score);
+	judge(score);
 	clock_t end = clock();
+	board.draw();
 
 	double elap = (double)(end-start)/CLOCKS_PER_SEC;
 	return elap;
