@@ -3,6 +3,7 @@
 #include <time.h>
 #include <vector>
 #include <iostream>
+#include <iomanip>
 #include <map>
 #include <unistd.h> // usleep関数
 #include <time.h>   // for clock()
@@ -10,6 +11,7 @@
 using namespace std;
 #define BOARD_SIZE 9
 #define W_SIZE 11
+#define KOMI = 6.5
 // 石を打ったときの処理
 #define SUCCESS  0 		// 打てる
 #define KILL 	 1 		// 自殺手
@@ -34,7 +36,12 @@ typedef struct{
 	int x;
 } point;
 
-const char *visual[4] = {"・","🔴 ","⚪️ ", "◼️"};
+typedef struct{
+	int black;
+	int white;
+} score_t;
+
+const char *visual[4] = {"・","🔴 ","⚪️ "};
 
 void getNeighbors(point center, point *neighbors){
 //	printf("getNeighbors\n");
@@ -46,8 +53,8 @@ void getNeighbors(point center, point *neighbors){
 
 class Board{
 private:
-	int data[W_SIZE][W_SIZE];
 public:
+	int data[W_SIZE][W_SIZE];
 	point ko;
 	Board(){
 		for(int y = 0; y<W_SIZE; y++){
@@ -60,6 +67,10 @@ public:
 			this->data[0][i] = this->data[W_SIZE-1][i] = this->data[i][0] = this->data[i][W_SIZE-1] = WALL;
 		}
 		this->ko = (point){1000,1000};
+	}
+	void copy(Board *board){
+		memcpy(board->data, this->data, sizeof(this->data));
+		board->ko = ko;
 	}
 	// 石の設置と取得
 	void set(point position, int stone){
@@ -116,14 +127,13 @@ public:
 	int tact;
 
 	point posi;
-	Player(int color){
+	Player(int color, int strategy){
 		this->color = color;
 		un_color = 3 - this->color;
-		//this->tact = tactics(strategy);
+		this->tact = strategy;
 	}
 	int play(Board *board){
-
-		return SUCCESS;
+		return tactics(board);
 	}
 	// 相手の石を取る
 	void capture(Board *board, point position){
@@ -238,6 +248,17 @@ public:
 		}
 		return PASS;
 	}
+	int tactics(Board *board){
+		return random_choice(board);
+	/*
+		if(this->tact==MONTE_CARLO){
+			//return monte_carlo(board);
+		}
+		else{
+			return random_choice(board);
+		}
+	*/
+	}
 };
 
 void count_around(int checked[11][11], Board *board, point position, int color, int* joined, int* liberty){
@@ -279,23 +300,24 @@ int(* double_array(int array[][9]))[9]{
 	return array;
 }
 
-int main(void){
+
+double run(void){
 	clock_t start = clock();
-	srand((unsigned) time(NULL));
 	// 碁盤の作成
 	Board board;
 	// プレイヤー
-	Player black = Player(BLACK);
-	Player white = Player(WHITE);
+	Player black = Player(BLACK, RANDOM);
+	Player white = Player(WHITE, RANDOM);
 	Player player = black;
+	//board.set((point){2,5},BLACK);
 	// 先手
 	int length = 0;
 	int passed = 0;
 	// 対局開始
 	while(passed < 2){
-		int result = player.random_choice(&board);
+		int result = player.play(&board);
 		if(result==SUCCESS){
-			board.draw();
+			//board.draw();
 			// usleep(100000); // 1000000=1sec
 		}
 		// パス判定
@@ -313,9 +335,25 @@ int main(void){
 			player = black;
 		}
 	}
+	//board.draw();
 	clock_t end = clock();
-	board.draw();
-	printf("Time : %f(sec)\n", (double)(end-start)/CLOCKS_PER_SEC);
-	printf("%f(playout/sec)\n", (double)CLOCKS_PER_SEC/(end-start));
+
+	double elap = (double)(end-start)/CLOCKS_PER_SEC;
+	return elap;
+}
+
+int main(){
+	double sum = 0.0;
+	size_t loop_count = 1000;
+	srand((unsigned) time(NULL));
+
+	for(size_t i=0; i<loop_count; i++){
+		sum += run();
+	}
+	std::cout << "total time " << sum << " sec. " << std::endl;
+	sum /= static_cast<double>(loop_count);
+	std::cout << "average time " << sum << " sec. " << std::endl;
+	std::cout << "average playout " << std::setprecision(8) << (double)CLOCKS_PER_SEC / (sum * CLOCKS_PER_SEC) << std::endl;
+
 	return 0;
 }
