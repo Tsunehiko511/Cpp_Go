@@ -41,7 +41,7 @@ typedef struct{
 	int white;
 } score_t;
 
-const char *visual[4] = {"・","🔴 ","⚪️ "};
+const char *visual[4] = {"・","🔴 ","⚪️️ "};
 
 void getNeighbors(point center, point *neighbors){
 //	printf("getNeighbors\n");
@@ -103,9 +103,10 @@ public:
 	vector<point> getSpaces(){
 //		printf("getSpaces\n");
 		vector<point> space_array;
+		point position;
 		for(int y = 1; y<10;y++){
 			for(int x = 1; x<10;x++){
-				point position = (point){y,x};
+				position = (point){y,x};
 				if(get(position) == SPACE){
 					space_array.push_back(position);
 				}
@@ -121,9 +122,13 @@ void count_joined_liberty(Board *board, point position, int color, int* joined, 
 void getPoints(Board *board, double *count){
 	int black_points = 0;
 	int white_points = 0;
+	int data;
+	int around[4];
+	point neighbors[4];
+
 	for(int y=1; y<W_SIZE-1; y++){
 		for(int x=1; x<W_SIZE-1; x++){
-			int data = board->get((point){y,x});
+			data = board->get((point){y,x});
 			if(data == BLACK){
 				black_points += 1;
 			}
@@ -131,8 +136,7 @@ void getPoints(Board *board, double *count){
 				white_points += 1;
 			}
 			else{
-				int around[4] = {0,0,0,0}; // ４方向のSPACE,BLACK,WHITE,WALLの数
-				point neighbors[4];
+				memset(around, 0, sizeof(around)); // ４方向のSPACE,BLACK,WHITE,WALLの数
 				getNeighbors((point){y,x}, neighbors);
 				for(int i=0; i<4 ;i++){
 					around[board->get(neighbors[i])] += 1;
@@ -188,9 +192,10 @@ public:
 //		printf("capture\n");
 		board->remove(position);
 		point neighbors[4];
+		point neighbor;
 		getNeighbors(position,neighbors);
 		for(int i=0; i<4; i++){
-			point neighbor = neighbors[i];
+			neighbor = neighbors[i];
 			if(board->get(neighbor) == this->un_color){
 				capture(board, neighbor);
 			}
@@ -216,7 +221,7 @@ public:
 		int mikata_safe = 0;
 		int take_sum = 0;
 		point ko = {0,0};
-		point neighbors[4] = {0,0,0,0};
+		point neighbors[4];
 		getNeighbors(position,neighbors);
 		// 打つ前の４方向をしらべる
 		for(int i=0; i<4; i++){
@@ -250,7 +255,7 @@ public:
 			return ME;
 		}
 		// 石を取る
-		point neighbors2[4] = {0,0,0,0};
+		point neighbors2[4];
 		getNeighbors(position,neighbors2);
 		for (int i = 0; i < 4; ++i){
 			if (colors[i] == this->un_color && libertys[i] == 1){
@@ -304,10 +309,12 @@ public:
 //		printf("random_choice\n");
 		vector<point> spaces = board->getSpaces();
 		int l = spaces.size();
+		int n;
+		int result;
 		while(l>0){
-			int n = rand()%l;
+			n = rand()%l;
 			point position = spaces[n];
-			int result = move(board, position);
+			result = move(board, position);
 			if(result == SUCCESS){
 				posi = position;
 				return SUCCESS;
@@ -326,23 +333,26 @@ public:
 		int try_total = 0;
 		int best_winner = -1;
 		point best_position = {0,0};
-
+		double score[2];
 		// すべての手対して１手打つ（盤面は崩れるのでコピー）
 		Board thinking_board;
 		Board thinking_board_next;
 		vector<point> spaces = board->getSpaces();
 		int l = spaces.size();
+		int result;
+		int win_count;
+
 		for(int i=0; i<l; i++){
 			point position = spaces[i];
 			board->copy(&thinking_board);
-			int result = this->move(&thinking_board, position);
+			result = this->move(&thinking_board, position);
 			if(result != SUCCESS){
 				continue;
 			}
-			int win_count = 0;
+			win_count = 0;
 			for (int n=0; n<TRY_GAMES; n++){
 				thinking_board.copy(&thinking_board_next);
-				double score[2] = {0.0,0.0};
+				memset(score, 0.0, sizeof(score));
 				playout(&thinking_board_next, score);
 				if((score[0] > score[1] && this->color == BLACK)||(score[0] < score[1] && this->color == WHITE)){
 					win_count += 1;
@@ -355,11 +365,11 @@ public:
 				best_position = position;
 			}
 		}
-		printf("playout：%d回\n", try_total);
+		printf("playout：%d 回, ", try_total);
 		clock_t end = clock();
 		double elap = (double)(end-start)/CLOCKS_PER_SEC;
-		std::cout << "処理時間：" << elap << " sec. " << std::endl;
-		std::cout << (double)try_total/elap << " playout/sec. " << std::endl;		
+		std::cout << "time：" << elap << "sec. " << (double)try_total/elap << "playout/sec. " << std::endl;
+		// printf("%s (%d,%d)\n",visual[this->color], best_position.y,best_position.x);
 		if(best_position.y==0 && best_position.x==0){
 			return PASS;
 		}
@@ -367,7 +377,7 @@ public:
 	}
 
 	int tactics(Board *board){
-		if(this->tact==MONTE_CARLO){
+		if(this->tact == MONTE_CARLO){
 			return monte_carlo(board);
 		}
 		else{
@@ -384,12 +394,14 @@ void count_around(int checked[11][11], Board *board, point position, int color, 
 	*joined +=1;
 	// 周辺を調べる
 	point neighbors[4] = {(point){y-1,x}, (point){y+1,x}, (point){y,x-1}, (point){y,x+1}};
+	point neighbor;
+	int data;
 	for(int i = 0; i<4; i++){
-		point neighbor = neighbors[i];
+		neighbor = neighbors[i];
 		if(checked[neighbor.y][neighbor.x]==TRUE){
 			continue;
 		}
-		int data = board->get(neighbor);
+		data = board->get(neighbor);
 		if(data==SPACE){
 			checked[neighbor.y][neighbor.x] = TRUE;
 			*liberty += 1;
@@ -425,11 +437,13 @@ int main(void){
 	Player player = black;
 	// 先手
 	int passed = 0;
+
+	int result;
 	// 対局開始
 	while(passed < 2){
-		int result = player.play(&board);
+		result = player.play(&board);
 		if(result==SUCCESS){
-			board.draw();
+			// board.draw();
 			// usleep(100000); // 1000000=1sec
 		}
 		// パス判定
