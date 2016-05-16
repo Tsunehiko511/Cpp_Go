@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <time.h>
 #include <vector>
@@ -12,6 +13,10 @@ using namespace std;
 #define BOARD_SIZE 9
 #define W_SIZE 11
 #define KOMI  6.5
+
+#define MAX_CHILD W_SIZE*W_SIZE+1 //局面での手の数　+1はPASS
+
+
 // 石を打ったときの処理
 #define SUCCESS  0 		// 打てる
 #define KILL 	 1 		// 自殺手
@@ -25,11 +30,15 @@ using namespace std;
 #define WHITE 2
 #define WALL  3
 // 戦略
-#define RANDOM 1
+#define RANDOM 			1
 #define MONTE_CARLO 2
+#define UCB 				3
 // 真偽値
 #define FALSE 0
 #define TRUE  1
+
+
+
 // 座標
 typedef struct{
 	int y;
@@ -41,6 +50,15 @@ typedef struct{
 	int white;
 } score_t;
 
+// １手の情報を保持する構造体
+typedef struct {
+	point position; // 手の座標
+	int win; 				// この手の勝数
+	int games; 			// この手を選んだ回数
+	double rate; 		// この手の勝率
+} PRE_MOVE;
+
+
 const char *visual[4] = {"・","🔴 ","⚪️️ "};
 
 void getNeighbors(point center, point *neighbors){
@@ -50,6 +68,23 @@ void getNeighbors(point center, point *neighbors){
 	neighbors[2] = (point){center.y,center.x-1};
 	neighbors[3] = (point){center.y,center.x+1};
 }
+
+int isERROR(point position){
+	if(position.y == 0 && position.x == 0){
+		return TRUE;
+	}else{
+		return FALSE;
+	}
+}
+
+int isPASS(point position){
+	if(position.y == 0 && position.x == 0){
+		return TRUE;
+	}else{
+		return FALSE;
+	}
+}
+
 
 class Board{
 private:
@@ -281,8 +316,9 @@ public:
 		return SUCCESS;
 	}
 
-	void playout(Board *board, double *score){
-		Player player1 = Player(un_color, RANDOM);
+	// 盤面boardのときに相手playerから始まったときのplayout結果(score)
+	void playout(Board *board, int color, double *score){
+		Player player1 = Player(3-color, RANDOM);
 		Player player2 = Player(color, RANDOM);
 		Player player = player1;
 		int passed = 0;
@@ -353,7 +389,8 @@ public:
 			for (int n=0; n<TRY_GAMES; n++){
 				thinking_board.copy(&thinking_board_next);
 				memset(score, 0.0, sizeof(score));
-				playout(&thinking_board_next, score);
+				// 相手プレーヤーからのplayout
+				playout(&thinking_board_next, this->un_color, score);
 				if((score[0] > score[1] && this->color == BLACK)||(score[0] < score[1] && this->color == WHITE)){
 					win_count += 1;
 				}
@@ -373,12 +410,111 @@ public:
 		if(best_position.y==0 && best_position.x==0){
 			return PASS;
 		}
+		posi = best_position;
+		return this->move(board, best_position);
+	}
+	// UCBで候補から打つ手を選ぶ
+	PRE_MOVE* select_with_ucb(PRE_MOVE *pre_moves, int num_pre_moves, int sum_playout){
+		PRE_MOVE* selected;
+		double max_ucb = -999;
+		const double C = 0.31;
+		for(int i=0; i<num_pre_moves; i++){
+			// printf("(%d,%d)\n", pre_moves[i].position.y,pre_moves[i].position.x);
+			double ucb;
+			if(pre_moves[i].games == 0){
+				ucb = 10000 + rand();
+			}
+			else{
+				ucb = pre_moves[i].rate +  sqrt( log(pre_moves[i].games)/sum_playout);
+			}
+			if(ucb > max_ucb){
+				max_ucb = ucb;
+				selected = &pre_moves[i];
+			}
+		}
+		return selected;
+	}
+
+
+
+	int ucb_choice(Board* board){
+		clock_t start = clock();
+
+		const int PLAYOUT_MAX = 2700;
+		int sum_playout = 0;
+
+		point best_position = {0,0};
+		double score[2];
+		// すべての手対して１手打つ（盤面は崩れるのでコピー）
+		Board thinking_board;
+		Board thinking_board_next;
+		vector<point> spaces = board->getSpaces();
+		int l = spaces.size();
+		PRE_MOVE pre_moves[l];
+		int result;
+		const double C = 0.31;
+		int num_pre_moves = 0;
+
+		// 合法手に対して1playoutを行い勝率を取得する
+		for(int i=0; i<l; i++){
+			point position = spaces[i];
+			board->copy(&thinking_board);
+			// １手打ってみる（合法手か調べる）
+			result = this->move(&thinking_board, position);
+			if(result != SUCCESS){
+				continue;
+			}
+			pre_moves[num_pre_moves].position = spaces[i];
+			pre_moves[num_pre_moves].position = spaces[i];
+			pre_moves[num_pre_moves].win = 0;
+			pre_moves[num_pre_moves].games = 0;
+			pre_moves[num_pre_moves].rate = 0.0;
+			num_pre_moves += 1;
+		}
+
+		while(num_pre_moves>0){
+			// 候補から手を選ぶ
+			PRE_MOVE* selected = select_with_ucb( pre_moves, num_pre_moves, sum_playout);
+			if(sum_playout>=PLAYOUT_MAX){
+				// printf("(%d,%d)\n", selected->position.y, selected->position.x);
+				best_position.y = selected->position.y;
+				best_position.x = selected->position.x;
+				break;
+			}
+			board->copy(&thinking_board);
+			// １手打ってみる（合法手か調べる）
+			this->move(&thinking_board, selected->position);
+			// playoutする
+			memset(score, 0.0, sizeof(score));
+			// 相手プレーヤーからのplayout
+			playout(&thinking_board, this->un_color, score);
+			// playout回数をカウントする
+			sum_playout += 1;
+			selected->games += 1;
+			// 勝率の計算をする
+			if((score[0] > score[1] && this->color == BLACK)||(score[0] < score[1] && this->color == WHITE)){
+				selected->win += 1;
+			}
+			selected->rate = selected->win/selected->games;
+		}
+
+  	printf("playout：%d 回, ", sum_playout);
+		clock_t end = clock();
+		double elap = (double)(end-start)/CLOCKS_PER_SEC;
+		std::cout << "time：" << elap << "sec. " << (double)sum_playout/elap << "playout/sec. " << std::endl;
+		if(isERROR(best_position)){
+			return PASS;
+		}
+		posi = best_position;
 		return this->move(board, best_position);
 	}
 
 	int tactics(Board *board){
 		if(this->tact == MONTE_CARLO){
 			return monte_carlo(board);
+		}
+		else if(this->tact == UCB){
+			return ucb_choice(board);
 		}
 		else{
 			return random_choice(board);
@@ -432,7 +568,7 @@ int main(void){
 	// 碁盤の作成
 	Board board;
 	// プレイヤー
-	Player black = Player(BLACK, MONTE_CARLO);
+	Player black = Player(BLACK, UCB);
 	Player white = Player(WHITE, RANDOM);
 	Player player = black;
 	// 先手
@@ -443,12 +579,13 @@ int main(void){
 	while(passed < 2){
 		result = player.play(&board);
 		if(result==SUCCESS){
-			// board.draw();
-			// usleep(100000); // 1000000=1sec
+			printf("%s (%d,%d)\n",visual[player.color], player.posi.y,player.posi.x);
+			board.draw();
 		}
 		// パス判定
 		if (result==PASS){
 			passed += 1;
+			//printf("%s　パス\n", visual[player.color]);
 		}
 		else{
 			passed = 0;
