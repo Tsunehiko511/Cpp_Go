@@ -425,7 +425,7 @@ public:
 				ucb = 10000 + rand();
 			}
 			else{
-				ucb = pre_moves[i].rate +  sqrt( log(pre_moves[i].games)/sum_playout);
+				ucb = pre_moves[i].rate +  sqrt(log(sum_playout)/pre_moves[i].games);
 			}
 			if(ucb > max_ucb){
 				max_ucb = ucb;
